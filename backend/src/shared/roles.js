@@ -42,6 +42,10 @@ const READ_ALL = [
   'disruptions:preview',
   'staff:read',
   'staff:attendance',
+  'pulse:read',
+  'pulse:report',
+  'fines:read',
+  'fines:report',
 ];
 
 export const PERMISSIONS = {
@@ -57,6 +61,9 @@ export const PERMISSIONS = {
     'override:medium',
     'exports:read',
     'disruptions:commit',
+    'pulse:manage',
+    'fines:report',
+    'fines:read',
   ],
 
   registration_desk: [
@@ -69,6 +76,8 @@ export const PERMISSIONS = {
     'staff:manage',
     'override:medium',
     'disruptions:commit',
+    'fines:report',
+    'fines:read',
   ],
 
   events_team: [
@@ -82,6 +91,9 @@ export const PERMISSIONS = {
     'override:medium',
     'exports:read',
     'disruptions:commit',
+    'pulse:manage',
+    'fines:report',
+    'fines:read',
   ],
 
   logistics_head: [
@@ -94,6 +106,9 @@ export const PERMISSIONS = {
     'override:medium',
     'exports:read',
     'disruptions:commit',
+    'pulse:manage',
+    'fines:report',
+    'fines:read',
   ],
 
   merchandise_desk: [
@@ -106,6 +121,8 @@ export const PERMISSIONS = {
     'staff:manage',
     'override:medium',
     'disruptions:commit',
+    'fines:report',
+    'fines:read',
   ],
 
   food_coordinator: [
@@ -115,6 +132,8 @@ export const PERMISSIONS = {
     'staff:manage',
     'override:medium',
     'disruptions:commit',
+    'fines:report',
+    'fines:read',
   ],
 
   volunteer: [
@@ -124,6 +143,10 @@ export const PERMISSIONS = {
     'participants:checkin',
     'staff:write',
     'staff:attendance',
+    'pulse:read',
+    'pulse:report',
+    'fines:report',
+    'fines:read',
   ],
 };
 
