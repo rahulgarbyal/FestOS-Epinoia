@@ -53,7 +53,7 @@ export function generateSchedule({ events, venues, participants, registrations, 
   for (const r of registrations) {
     if (!r.active) continue;
     if (!regsByEvent.has(r.eventId)) regsByEvent.set(r.eventId, []);
-    regsByEvent.get(r.eventId).push(r.participantId);
+    regsByEvent.get(r.eventId).push(r);
   }
 
   const busy = new Map();      // participantId -> [{start,end,venue}]
@@ -74,23 +74,52 @@ export function generateSchedule({ events, venues, participants, registrations, 
   const eventsSorted = [...events].sort((a, b) => (b.volunteersNeeded || 0) - (a.volunteersNeeded || 0) || a.eventId.localeCompare(b.eventId));
   for (const ev of eventsSorted) {
     // Heat assignment lever: group people by arrival so each heat is mostly on site at the same time.
-    const ids = [...new Set(regsByEvent.get(ev.eventId) || [])]
+    const eventRegistrations = regsByEvent.get(ev.eventId) || [];
+    const ids = [...new Set(eventRegistrations.map((r) => r.participantId))]
       .filter((id) => byId.has(id))
       .sort((a, b) => new Date(byId.get(a).arrivalDateTime) - new Date(byId.get(b).arrivalDateTime) || a.localeCompare(b));
     const heats = Math.max(minHeats, Math.ceil(ids.length / maxHeat));
-    const heatSize = Math.ceil(ids.length / heats);
+    const attendance = ids.length || Number(ev.expectedParticipants || 0);
+    let heatMembers;
+    if (ev.type === 'team') {
+      // A registered team is one scheduling unit. Never divide its members across prelim heats.
+      const groups = new Map();
+      for (const registration of eventRegistrations) {
+        const id = registration.participantId;
+        if (!byId.has(id)) continue;
+        const key = registration.teamId ? `team:${registration.teamId}` : `solo:${id}`;
+        if (!groups.has(key)) groups.set(key, []);
+        if (!groups.get(key).includes(id)) groups.get(key).push(id);
+      }
+      const units = [...groups.values()].map((members) => members.sort((a, b) =>
+        new Date(byId.get(a).arrivalDateTime) - new Date(byId.get(b).arrivalDateTime) || a.localeCompare(b)))
+        .sort((a, b) => new Date(byId.get(a[0]).arrivalDateTime) - new Date(byId.get(b[0]).arrivalDateTime) || a[0].localeCompare(b[0]));
+      heatMembers = Array.from({ length: heats }, () => []);
+      for (const unit of units) {
+        const options = heatMembers.map((members, index) => ({ index, size: members.length }))
+          .filter((candidate) => candidate.size === 0 || candidate.size + unit.length <= maxHeat)
+          .sort((a, b) => a.size - b.size || a.index - b.index);
+        if (!options.length) heatMembers.push([]);
+        const target = options.length ? heatMembers[options[0].index] : heatMembers[heatMembers.length - 1];
+        target.push(...unit);
+      }
+    } else {
+      const heatSize = Math.ceil(ids.length / heats);
+      heatMembers = Array.from({ length: heats }, (_, index) => ids.slice(index * heatSize, (index + 1) * heatSize));
+    }
     const reqs = ev.venueRequirements || [];
     const dur = ev.durationMinutes || 60;
     const occLen = setup + dur + teardown;
 
-    for (let h = 1; h <= heats; h++) {
-      const members = ids.slice((h - 1) * heatSize, h * heatSize);
-      const need = members.length;
+    for (let h = 1; h <= heatMembers.length; h++) {
+      const members = heatMembers[h - 1] ||  [];
+      const need = ids.length ? members.length : Math.min(heatSize, Math.max(0, attendance - (h - 1) * heatSize));
       const volNeed = ev.volunteersNeeded || 0;
       let best = null;
       const reasons = new Set();
       for (const v of venues) {
-        const vf = new Set(feats[v.venueId] || []);
+        const vf = new Set(feats[v.venueId] || v.facilities || []);
+        if (ev.requiredVenueType && ![v.venueType, v.category].includes(ev.requiredVenueType)) { reasons.add('VENUE_TYPE_MISMATCH'); continue; }
         if (hard.has('SCH_VENUE_FEATURES') && !reqs.every((r) => vf.has(r))) { reasons.add('VENUE_FEATURES_MISSING'); continue; }
         if (hard.has('SCH_VENUE_CAPACITY') && need > Math.floor(v.capacity * factor)) { reasons.add('CAPACITY_EXCEEDED'); continue; }
         const starts = candidateStarts(v.windows || [], dur, occLen);
@@ -148,6 +177,7 @@ export function generateSchedule({ events, venues, participants, registrations, 
         slotId, eventId: ev.eventId, round: 'prelims', heat: h, venueId: best.venue.venueId,
         start: best.start, end: addMinutes(best.start, dur), setupMinutes: setup, teardownMinutes: teardown,
         expectedSize: need, participantIds: members, participantsKnown: true,
+        teamIds: [...new Set(eventRegistrations.filter((registration) => members.includes(registration.participantId) && registration.teamId).map((registration) => registration.teamId))],
         judgeIds: (ev.judgeIds || []).slice(0, 2), volunteersNeeded: volNeed,
         equipment: ev.equipmentNeeds || [], status: 'scheduled', reasonCodes: codes,
       };
@@ -167,7 +197,7 @@ export function generateSchedule({ events, venues, participants, registrations, 
 
     // Later rounds: sized from the fraction assumptions, scheduled after the prelims finish, no participants yet.
     const sizes = [];
-    if (ev.rounds?.includes('semis')) sizes.push({ round: 'semis', size: Math.max(finalists, Math.round(ids.length * semisF)) });
+    if (ev.rounds?.includes('semis')) sizes.push({ round: 'semis', size: Math.max(finalists, Math.round((ids.length || attendance) * semisF)) });
     if (ev.rounds?.includes('finals')) sizes.push({ round: 'finals', size: finalists });
     const lastEnd = slots.filter((s) => s.eventId === ev.eventId).reduce((m, s) => (s.end > m ? s.end : m), new Date(0));
     let cursorBase = new Date(lastEnd.getTime() + roundGap * 60000);
